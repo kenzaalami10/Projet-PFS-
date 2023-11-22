@@ -1,26 +1,47 @@
 pipeline {
     agent any
-       triggers {
-        pollSCM "* * * * *"
-       }
+
+    environment {
+        // Ajoutez d'autres variables d'environnement au besoin
+        DOCKER_HUB_CREDENTIALS = credentials('dockerHubCredentials')
+        MAVEN_TOOL_NAME = 'Maven'
+    }
+
+    tools {
+        // Assurez-vous que l'outil Maven est configuré dans Jenkins avec le nom 'Maven'
+        maven MAVEN_TOOL_NAME
+    }
+
     stages {
-        stage('Build Application') { 
+        stage('Checkout SCM') {
             steps {
-                echo '=== Building Petclinic Application ==='
-                sh 'mvn -B -DskipTests clean package' 
+                checkout scm
             }
         }
+
+        stage('Build Application') {
+            steps {
+                script {
+                    echo '=== Building Petclinic Application ==='
+                    // Vérifier si Maven est installé, sinon l'installer
+                    sh "which mvn || { echo 'Maven not found, installing...'; sudo apt-get install -y maven; }"
+                    sh "mvn -B -DskipTests clean package"
+                }
+            }
+        }
+
         stage('Test Application') {
             steps {
                 echo '=== Testing Petclinic Application ==='
                 sh 'mvn test'
-            }
-            post {
-                always {
-                    junit 'target/surefire-reports/*.xml'
+                post {
+                    always {
+                        junit 'target/surefire-reports/*.xml'
+                    }
                 }
             }
         }
+
         stage('Build Docker Image') {
             when {
                 branch 'master'
@@ -32,22 +53,9 @@ pipeline {
                 }
             }
         }
-        stage('Push Docker Image') {
-            when {
-                branch 'master'
-            }
-            steps {
-                echo '=== Pushing Petclinic Docker Image ==='
-                script {
-                    GIT_COMMIT_HASH = sh (script: "git log -n 1 --pretty=format:'%H'", returnStdout: true)
-                    SHORT_COMMIT = "${GIT_COMMIT_HASH[0..7]}"
-                    docker.withRegistry('https://registry.hub.docker.com', 'meriem001') {
-                        app.push("$SHORT_COMMIT")
-                        app.push("latest")
-                    }
-                }
-            }
-        }
+
+        // ... autres étapes du pipeline
+
         stage('Remove local images') {
             steps {
                 echo '=== Delete the local docker images ==='
@@ -56,4 +64,14 @@ pipeline {
             }
         }
     }
+
+    post {
+        success {
+            echo 'Deployment successful!'
+        }
+        failure {
+            echo 'Deployment failed.'
+        }
+    }
 }
+
